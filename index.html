@@ -359,11 +359,120 @@
         font-family: "Jost";
         font-size: 0.92rem;
       }
-      .field input:focus,
-      .field select:focus,
-      .field textarea:focus {
+      .date-picker-wrap {
+        position: relative;
+      }
+      .date-input {
+        width: 100%;
+        background: #0e0c0a;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 12px 14px;
+        color: var(--cream);
+        font-family: "Jost";
+        font-size: 0.92rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        cursor: pointer;
+        text-align: left;
+      }
+      .date-input:focus {
         outline: 2px solid var(--gold);
         outline-offset: 1px;
+      }
+      .date-input.has-value span {
+        color: var(--cream);
+      }
+      .date-input span {
+        color: #6b6248;
+      }
+      .calendar-popover {
+        position: absolute;
+        top: calc(100% + 8px);
+        left: 0;
+        right: 0;
+        background: var(--panel);
+        border: 1px solid var(--gold);
+        border-radius: 14px;
+        padding: 14px;
+        z-index: 30;
+        display: none;
+        box-shadow: 0 12px 28px rgba(0, 0, 0, 0.5);
+      }
+      .calendar-popover.show {
+        display: block;
+      }
+      .cal-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 10px;
+      }
+      .cal-header span {
+        color: var(--gold-soft);
+        font-weight: 600;
+        font-size: 0.92rem;
+      }
+      .cal-header button {
+        background: none;
+        border: 1px solid var(--line);
+        color: var(--gold-soft);
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 1rem;
+        line-height: 1;
+      }
+      .cal-header button:disabled {
+        opacity: 0.3;
+        cursor: not-allowed;
+      }
+      .cal-weekdays {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        text-align: center;
+        font-size: 0.7rem;
+        color: var(--muted);
+        margin-bottom: 4px;
+      }
+      .cal-grid {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        gap: 2px;
+      }
+      .cal-day {
+        aspect-ratio: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.82rem;
+        color: var(--cream);
+        border-radius: 8px;
+        cursor: pointer;
+        background: none;
+        border: none;
+        font-family: "Jost";
+      }
+      .cal-day:hover:not(:disabled):not(.empty) {
+        background: #241d10;
+      }
+      .cal-day.today {
+        border: 1px solid var(--gold);
+      }
+      .cal-day.selected {
+        background: linear-gradient(120deg, var(--gold), var(--gold-soft));
+        color: #1a1509;
+        font-weight: 600;
+      }
+      .cal-day:disabled {
+        color: #4a4535;
+        cursor: not-allowed;
+      }
+      .cal-day.empty {
+        visibility: hidden;
+        cursor: default;
       }
       .radio-row {
         display: flex;
@@ -593,8 +702,41 @@
                   <p class="duration-note" id="availNote"></p>
                 </div>
                 <div class="field">
-                  <label>Estimasi Tanggal Masuk</label
-                  ><input type="date" id="f_date" />
+                  <label>Estimasi Tanggal Masuk</label>
+                  <div class="date-picker-wrap" id="datePickerWrap">
+                    <button
+                      type="button"
+                      class="date-input"
+                      id="dateDisplayBtn"
+                    >
+                      <span id="dateDisplayText">Pilih tanggal</span>
+                      <svg
+                        width="18"
+                        height="18"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="#c9a24a"
+                        stroke-width="1.6"
+                      >
+                        <rect x="3" y="5" width="18" height="16" rx="2" />
+                        <path d="M3 10h18M8 3v4M16 3v4" />
+                      </svg>
+                    </button>
+                    <div class="calendar-popover" id="calendarPopover">
+                      <div class="cal-header">
+                        <button type="button" id="calPrev">‹</button>
+                        <span id="calMonthYear"></span>
+                        <button type="button" id="calNext">›</button>
+                      </div>
+                      <div class="cal-weekdays">
+                        <span>Min</span><span>Sen</span><span>Sel</span
+                        ><span>Rab</span><span>Kam</span><span>Jum</span
+                        ><span>Sab</span>
+                      </div>
+                      <div class="cal-grid" id="calGrid"></div>
+                    </div>
+                  </div>
+                  <input type="hidden" id="f_date" />
                 </div>
                 <div class="field">
                   <label>Jumlah Penghuni</label
@@ -1146,17 +1288,117 @@
       updateRoomOptions(); // render awal pakai fallback, lalu ditimpa begitu fetch selesai
       loadPricingFromSupabase();
 
-      function updateCheckinNote() {
-        const note = document.getElementById("checkinNote");
-        if (currentDuration() === "bulanan") {
-          note.textContent =
-            "Sewa bulanan: jadwal check-in/check-out lebih fleksibel, dikonfirmasi oleh tim.";
-        } else {
-          note.textContent =
-            "Check-in mulai 14.00 · Check-out sebelum 12.00. Masuk sebelum check-in atau keluar setelah check-out dikenakan biaya tambahan.";
+      const MONTH_NAMES_ID = [
+        "Januari",
+        "Februari",
+        "Maret",
+        "April",
+        "Mei",
+        "Juni",
+        "Juli",
+        "Agustus",
+        "September",
+        "Oktober",
+        "November",
+        "Desember",
+      ];
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      let calViewYear = today.getFullYear();
+      let calViewMonth = today.getMonth();
+      let calSelectedDate = null;
+
+      const dateDisplayBtn = document.getElementById("dateDisplayBtn");
+      const calendarPopover = document.getElementById("calendarPopover");
+      const calMonthYear = document.getElementById("calMonthYear");
+      const calGrid = document.getElementById("calGrid");
+      const calPrev = document.getElementById("calPrev");
+      const calNext = document.getElementById("calNext");
+      const dateDisplayText = document.getElementById("dateDisplayText");
+      const f_dateHidden = document.getElementById("f_date");
+
+      function pad2(n) {
+        return n < 10 ? "0" + n : "" + n;
+      }
+      function isSameDay(a, b) {
+        return (
+          a &&
+          b &&
+          a.getFullYear() === b.getFullYear() &&
+          a.getMonth() === b.getMonth() &&
+          a.getDate() === b.getDate()
+        );
+      }
+
+      function renderCalendar() {
+        calMonthYear.textContent = `${MONTH_NAMES_ID[calViewMonth]} ${calViewYear}`;
+        const isCurrentMonth =
+          calViewYear === today.getFullYear() &&
+          calViewMonth === today.getMonth();
+        calPrev.disabled = isCurrentMonth;
+
+        const firstDayOfWeek = new Date(calViewYear, calViewMonth, 1).getDay();
+        const daysInMonth = new Date(
+          calViewYear,
+          calViewMonth + 1,
+          0,
+        ).getDate();
+
+        calGrid.innerHTML = "";
+        for (let i = 0; i < firstDayOfWeek; i++) {
+          const empty = document.createElement("span");
+          empty.className = "cal-day empty";
+          calGrid.appendChild(empty);
+        }
+        for (let d = 1; d <= daysInMonth; d++) {
+          const thisDate = new Date(calViewYear, calViewMonth, d);
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "cal-day";
+          btn.textContent = d;
+          if (thisDate < today) btn.disabled = true;
+          if (isSameDay(thisDate, today)) btn.classList.add("today");
+          if (isSameDay(thisDate, calSelectedDate))
+            btn.classList.add("selected");
+          btn.addEventListener("click", () => {
+            calSelectedDate = thisDate;
+            const iso = `${thisDate.getFullYear()}-${pad2(thisDate.getMonth() + 1)}-${pad2(thisDate.getDate())}`;
+            f_dateHidden.value = iso;
+            dateDisplayText.textContent = `${d} ${MONTH_NAMES_ID[calViewMonth]} ${calViewYear}`;
+            dateDisplayBtn.classList.add("has-value");
+            calendarPopover.classList.remove("show");
+            renderCalendar();
+          });
+          calGrid.appendChild(btn);
         }
       }
-      updateCheckinNote();
+
+      dateDisplayBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        calendarPopover.classList.toggle("show");
+      });
+      calPrev.addEventListener("click", () => {
+        calViewMonth--;
+        if (calViewMonth < 0) {
+          calViewMonth = 11;
+          calViewYear--;
+        }
+        renderCalendar();
+      });
+      calNext.addEventListener("click", () => {
+        calViewMonth++;
+        if (calViewMonth > 11) {
+          calViewMonth = 0;
+          calViewYear++;
+        }
+        renderCalendar();
+      });
+      document.addEventListener("click", (e) => {
+        if (!document.getElementById("datePickerWrap").contains(e.target)) {
+          calendarPopover.classList.remove("show");
+        }
+      });
+      renderCalendar();
 
       const vehicleRadios = document.querySelectorAll('input[name="vehicle"]');
       const carFollow = document.getElementById("carFollow");
