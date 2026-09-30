@@ -6,7 +6,7 @@
       name="viewport"
       content="width=device-width, initial-scale=1, viewport-fit=cover"
     />
-    <title>ULX Uniluxe — Link in Bio</title>
+    <title>Uniluxe — Link in Bio</title>
     <link
       href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Jost:wght@400;500;600&display=swap"
       rel="stylesheet"
@@ -502,6 +502,7 @@
         font-size: 0.72rem;
       }
     </style>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   </head>
   <body>
     <div class="page">
@@ -524,14 +525,14 @@
           class="qlink primary accordion-toggle"
           data-target="panel-booking"
         >
-          <span class="ic">📝</span><span class="txt">Daftar Minat</span
+          <span class="ic">📝</span><span class="txt">Reservasi</span
           ><span class="arrow">›</span>
         </button>
         <div class="accordion-panel" id="panel-booking">
           <div class="accordion-inner">
             <div class="sec">
               <h2>Daftar Minat</h2>
-              <p class="sub">Isi form ini, tim kami follow up via WhatsApp.</p>
+              <p class="sub">Silahkan isi form berikut ini.</p>
               <form class="form-card" id="bookingForm">
                 <div class="field">
                   <label>Nama Lengkap</label
@@ -671,7 +672,7 @@
                   Kirim via WhatsApp
                 </button>
                 <div class="form-foot">
-                  Data terkirim langsung ke WhatsApp tim ULX Uniluxe.
+                  Data terkirim langsung ke WhatsApp tim Uniluxe.
                 </div>
               </form>
             </div>
@@ -945,6 +946,19 @@
     </div>
 
     <script>
+      // =========================================================
+      // KONFIGURASI SUPABASE — ganti dua nilai ini dengan milik Anda
+      // (Project Settings -> API di dashboard Supabase)
+      // =========================================================
+      const SUPABASE_URL = "https://jfhrjhwjeexfmcowplkb.supabase.co/rest/v1/";
+      const SUPABASE_ANON_KEY =
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpmaHJqaHdqZWV4Zm1jb3dwbGtiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA0NDkxMjgsImV4cCI6MjEwNjAyNTEyOH0.8OF8Jvf4slBDTl3RrcYjXftiYuk_OCD9UA8uHuLi_8o";
+
+      const supabaseClient = supabase.createClient(
+        SUPABASE_URL,
+        SUPABASE_ANON_KEY,
+      );
+
       const toggles = document.querySelectorAll(".accordion-toggle");
       toggles.forEach((btn) => {
         btn.addEventListener("click", () => {
@@ -999,17 +1013,17 @@
       setActive(document.getElementById("flexRow"));
       setActive(document.getElementById("durationRow"));
 
-      // Ketersediaan kamar per durasi — admin edit di sini selama belum terhubung Supabase.
-      // Default: semua kamar tersedia untuk semua durasi.
-      const roomAvailability = {
+      // Ketersediaan kamar per durasi & matriks harga — diisi dari Supabase (tabel room_pricing).
+      // Nilai di bawah ini HANYA fallback kalau fetch ke Supabase gagal (mis. koneksi putus),
+      // supaya form tetap bisa dipakai walau data belum sinkron.
+      let roomAvailability = {
         compact: ["harian", "mingguan", "bulanan"],
         superior: ["harian", "mingguan", "bulanan"],
         deluxe: ["harian", "mingguan", "bulanan"],
         executive: ["harian", "mingguan", "bulanan"],
       };
 
-      // Matriks harga per durasi x tipe kamar — admin edit di sini selama belum terhubung Supabase.
-      const priceMatrix = {
+      let priceMatrix = {
         harian: {
           compact: 99999,
           superior: 149999,
@@ -1029,6 +1043,43 @@
           executive: 3500000,
         },
       };
+
+      async function loadPricingFromSupabase() {
+        try {
+          const { data, error } = await supabaseClient
+            .from("room_pricing")
+            .select("room_type, duration_type, price, is_available");
+
+          if (error) throw error;
+          if (!data || data.length === 0)
+            throw new Error("room_pricing kosong");
+
+          const newAvailability = {
+            compact: [],
+            superior: [],
+            deluxe: [],
+            executive: [],
+          };
+          const newPriceMatrix = { harian: {}, mingguan: {}, bulanan: {} };
+
+          data.forEach((row) => {
+            if (row.is_available) {
+              newAvailability[row.room_type].push(row.duration_type);
+            }
+            newPriceMatrix[row.duration_type][row.room_type] = row.price;
+          });
+
+          roomAvailability = newAvailability;
+          priceMatrix = newPriceMatrix;
+        } catch (err) {
+          console.error(
+            "Gagal memuat harga dari Supabase, pakai data fallback:",
+            err,
+          );
+        } finally {
+          updateRoomOptions(); // render ulang UI dengan data terbaru (atau fallback)
+        }
+      }
 
       function formatRupiah(n) {
         return "Rp " + n.toLocaleString("id-ID");
@@ -1092,7 +1143,8 @@
       document
         .getElementById("f_room")
         .addEventListener("change", updatePriceNote);
-      updateRoomOptions();
+      updateRoomOptions(); // render awal pakai fallback, lalu ditimpa begitu fetch selesai
+      loadPricingFromSupabase();
 
       function updateCheckinNote() {
         const note = document.getElementById("checkinNote");
@@ -1120,43 +1172,73 @@
 
       document
         .getElementById("bookingForm")
-        .addEventListener("submit", function (e) {
+        .addEventListener("submit", async function (e) {
           e.preventDefault();
           const name = document.getElementById("f_name").value.trim();
           const phone = document.getElementById("f_phone").value.trim();
           const roomSelect = document.getElementById("f_room");
           const room = roomSelect.options[roomSelect.selectedIndex].text;
-          const date = document.getElementById("f_date").value || "-";
+          const roomKey = roomSelect.value;
+          const date = document.getElementById("f_date").value || null;
           const duration = document.querySelector(
             'input[name="duration"]:checked',
           ).value;
-          const roomKey = roomSelect.value;
-          const price = (priceMatrix[duration.toLowerCase()] || {})[roomKey];
+          const durationKey = duration.toLowerCase();
+          const price = (priceMatrix[durationKey] || {})[roomKey];
           const priceText = price ? formatRupiah(price) : "-";
-          const guests = document.getElementById("f_guests").value || "-";
+          const guestsRaw = document.getElementById("f_guests").value;
+          const guests = guestsRaw ? parseInt(guestsRaw, 10) : null;
           const vehicle = document.querySelector(
             'input[name="vehicle"]:checked',
           ).value;
           const flexEl = document.querySelector('input[name="flex"]:checked');
-          const flex = vehicle === "Mobil" && flexEl ? flexEl.value : "-";
-          const notes = document.getElementById("f_notes").value.trim() || "-";
+          const flex = vehicle === "Mobil" && flexEl ? flexEl.value : null;
+          const notesRaw = document.getElementById("f_notes").value.trim();
+          const notes = notesRaw || null;
 
           if (!name || !phone) {
             alert("Mohon isi nama dan nomor WhatsApp.");
             return;
           }
 
+          const submitBtn = document.querySelector(".submit-btn");
+          submitBtn.disabled = true;
+          submitBtn.textContent = "Mengirim...";
+
+          // Simpan ke Supabase. Kalau gagal (mis. koneksi putus), tetap lanjutkan ke
+          // WhatsApp supaya lead tidak hilang sepenuhnya — cuma tidak tercatat di database.
+          try {
+            const { error } = await supabaseClient.from("leads").insert({
+              name,
+              phone,
+              room_type: roomKey,
+              duration_type: durationKey,
+              price_estimate: price || null,
+              checkin_date: date,
+              guests_count: guests,
+              vehicle,
+              vehicle_flex: flex,
+              notes,
+            });
+            if (error) console.error("Gagal simpan lead ke Supabase:", error);
+          } catch (err) {
+            console.error("Gagal simpan lead ke Supabase:", err);
+          }
+
+          submitBtn.disabled = false;
+          submitBtn.textContent = "Kirim via WhatsApp";
+
           const msg =
-            `Halo ULX Uniluxe, saya ingin daftar minat pre-booking:%0A` +
+            `Halo Uniluxe, saya ingin daftar minat pre-booking:%0A` +
             `Nama: ${name}%0A` +
             `No. WA: ${phone}%0A` +
             `Tipe Kamar: ${room}%0A` +
-            `Estimasi Masuk: ${date}%0A` +
+            `Estimasi Masuk: ${date || "-"}%0A` +
             `Durasi: ${duration}%0A` +
             `Estimasi Harga: ${priceText}%0A` +
-            `Jumlah Penghuni: ${guests}%0A` +
-            `Kendaraan: ${vehicle}${vehicle === "Mobil" ? " (fleksibel parkir luar: " + flex + ")" : ""}%0A` +
-            `Catatan: ${notes}`;
+            `Jumlah Penghuni: ${guests || "-"}%0A` +
+            `Kendaraan: ${vehicle}${vehicle === "Mobil" ? " (fleksibel parkir luar: " + (flex || "-") + ")" : ""}%0A` +
+            `Catatan: ${notes || "-"}`;
 
           document.getElementById("idModal").classList.add("show");
           document.getElementById("modalContinue").onclick = function () {
