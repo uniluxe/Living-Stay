@@ -543,6 +543,30 @@
         font-size: 0.7rem;
         color: #8a7f6a;
       }
+      .upload-btns {
+        display: flex;
+        gap: 8px;
+      }
+      .upload-btn {
+        flex: 1;
+        background: #0e0c0a;
+        border: 1px solid var(--line);
+        color: var(--cream);
+        padding: 10px;
+        border-radius: 8px;
+        font-size: 0.8rem;
+        cursor: pointer;
+        font-family: "Jost";
+      }
+      .upload-btn:active {
+        border-color: var(--gold);
+      }
+      .file-chosen-name {
+        font-size: 0.78rem;
+        color: var(--muted);
+        margin-top: 6px;
+        word-break: break-all;
+      }
       #carFollow {
         display: none;
         margin-top: 12px;
@@ -1460,8 +1484,14 @@
           row.className = "id-upload-row";
           row.innerHTML = `
             <label>Identitas Penghuni ${i}</label>
-            <input type="file" class="id-file-input" accept="image/jpeg,image/png,application/pdf" data-index="${i}" required />
-            <input type="text" class="id-note-input" placeholder="Catatan (opsional), mis. nama penghuni" data-index="${i}" />
+            <div class="upload-btns">
+              <button type="button" class="upload-btn camera-btn" data-index="${i}">📷 Ambil Foto</button>
+              <button type="button" class="upload-btn file-btn" data-index="${i}">📁 Pilih File</button>
+            </div>
+            <input type="file" class="id-file-input" accept="image/jpeg,image/png,application/pdf" data-index="${i}" hidden />
+            <input type="file" class="camera-input-hidden" accept="image/*" capture="environment" data-index="${i}" hidden />
+            <div class="file-chosen-name" data-index="${i}">Belum ada file dipilih</div>
+            <input type="text" class="id-note-input" placeholder="Nama Penghuni" data-index="${i}" />
             <div class="file-hint">Format JPG/PNG/PDF, maks ${MAX_FILE_MB}MB.</div>
           `;
           idUploadsContainer.appendChild(row);
@@ -1470,20 +1500,78 @@
       f_guestsInput.addEventListener("input", renderIdUploadRows);
       renderIdUploadRows();
 
+      function updateFileChosenName(idx, name) {
+        const el = idUploadsContainer.querySelector(
+          `.file-chosen-name[data-index="${idx}"]`,
+        );
+        if (el) el.textContent = name;
+      }
+
+      // Tombol "Ambil Foto" / "Pilih File" memicu input file tersembunyi.
+      idUploadsContainer.addEventListener("click", (e) => {
+        const cameraBtn = e.target.closest(".camera-btn");
+        const fileBtn = e.target.closest(".file-btn");
+        if (cameraBtn) {
+          idUploadsContainer
+            .querySelector(
+              `.camera-input-hidden[data-index="${cameraBtn.dataset.index}"]`,
+            )
+            .click();
+        } else if (fileBtn) {
+          idUploadsContainer
+            .querySelector(
+              `.id-file-input[data-index="${fileBtn.dataset.index}"]`,
+            )
+            .click();
+        }
+      });
+
+      // Baik hasil kamera maupun pilih file berakhir di input ".id-file-input"
+      // yang sama, supaya validasi & upload tidak perlu tahu cara file dipilih.
+      idUploadsContainer.addEventListener("change", (e) => {
+        const idx = e.target.dataset.index;
+        if (e.target.classList.contains("camera-input-hidden")) {
+          const file = e.target.files[0];
+          if (file) {
+            const canonical = idUploadsContainer.querySelector(
+              `.id-file-input[data-index="${idx}"]`,
+            );
+            const dt = new DataTransfer();
+            dt.items.add(file);
+            canonical.files = dt.files;
+            updateFileChosenName(idx, file.name);
+          }
+        } else if (e.target.classList.contains("id-file-input")) {
+          const file = e.target.files[0];
+          updateFileChosenName(
+            idx,
+            file ? file.name : "Belum ada file dipilih",
+          );
+        }
+      });
+
       function validateIdUploads() {
-        const fileInputs = Array.from(document.querySelectorAll(".id-file-input"));
+        const fileInputs = Array.from(
+          document.querySelectorAll(".id-file-input"),
+        );
         for (const input of fileInputs) {
           const file = input.files[0];
           if (!file) {
-            alert(`Mohon unggah dokumen identitas untuk Penghuni ${input.dataset.index}.`);
+            alert(
+              `Mohon unggah dokumen identitas untuk Penghuni ${input.dataset.index}.`,
+            );
             return null;
           }
           if (!ALLOWED_FILE_TYPES.includes(file.type)) {
-            alert(`Format file Penghuni ${input.dataset.index} tidak didukung. Gunakan JPG, PNG, atau PDF.`);
+            alert(
+              `Format file Penghuni ${input.dataset.index} tidak didukung. Gunakan JPG, PNG, atau PDF.`,
+            );
             return null;
           }
           if (file.size > MAX_FILE_MB * 1024 * 1024) {
-            alert(`Ukuran file Penghuni ${input.dataset.index} melebihi ${MAX_FILE_MB}MB.`);
+            alert(
+              `Ukuran file Penghuni ${input.dataset.index} melebihi ${MAX_FILE_MB}MB.`,
+            );
             return null;
           }
         }
@@ -1494,7 +1582,12 @@
         let successCount = 0;
         for (const input of fileInputs) {
           const file = input.files[0];
-          const note = document.querySelector(`.id-note-input[data-index="${input.dataset.index}"]`).value.trim() || null;
+          const note =
+            document
+              .querySelector(
+                `.id-note-input[data-index="${input.dataset.index}"]`,
+              )
+              .value.trim() || null;
           const ext = file.name.split(".").pop();
           const path = `${leadId}/${crypto.randomUUID()}.${ext}`;
           try {
@@ -1503,15 +1596,20 @@
               .upload(path, file);
             if (uploadError) throw uploadError;
 
-            const { error: docError } = await supabaseClient.from("lead_documents").insert({
-              lead_id: leadId,
-              file_path: path,
-              note,
-            });
+            const { error: docError } = await supabaseClient
+              .from("lead_documents")
+              .insert({
+                lead_id: leadId,
+                file_path: path,
+                note,
+              });
             if (docError) throw docError;
             successCount++;
           } catch (err) {
-            console.error(`Gagal unggah dokumen Penghuni ${input.dataset.index}:`, err);
+            console.error(
+              `Gagal unggah dokumen Penghuni ${input.dataset.index}:`,
+              err,
+            );
           }
         }
         return successCount;
