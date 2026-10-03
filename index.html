@@ -509,6 +509,40 @@
         font-weight: 600;
         font-size: 0.85rem;
       }
+      .id-upload-row {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 12px;
+        margin-top: 10px;
+      }
+      .id-upload-row label {
+        font-size: 0.78rem;
+        color: var(--gold-soft);
+        display: block;
+        margin-bottom: 6px;
+        font-weight: 600;
+      }
+      .id-upload-row input[type="file"] {
+        width: 100%;
+        color: var(--muted);
+        font-size: 0.8rem;
+      }
+      .id-upload-row input[type="text"] {
+        margin-top: 8px;
+        width: 100%;
+        background: #0e0c0a;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 10px 12px;
+        color: var(--cream);
+        font-family: "Jost";
+        font-size: 0.82rem;
+      }
+      .id-upload-row .file-hint {
+        margin-top: 6px;
+        font-size: 0.7rem;
+        color: #8a7f6a;
+      }
       #carFollow {
         display: none;
         margin-top: 12px;
@@ -746,6 +780,18 @@
                     id="f_guests"
                     placeholder="cth. 1"
                   />
+                </div>
+                <div class="field">
+                  <label
+                    >Dokumen Identitas Penghuni
+                    <span style="color: var(--gold)">*wajib</span></label
+                  >
+                  <p class="duration-note">
+                    Unggah KTP/SIM/Paspor untuk setiap penghuni (format
+                    JPG/PNG/PDF, maks 5MB per file). Dokumen hanya digunakan
+                    untuk verifikasi identitas dan tidak disebarluaskan.
+                  </p>
+                  <div id="idUploadsContainer"></div>
                 </div>
                 <div class="field">
                   <label>Apakah Anda membawa kendaraan?</label>
@@ -1400,6 +1446,77 @@
       });
       renderCalendar();
 
+      // ===================== Upload dokumen identitas per penghuni =====================
+      const MAX_FILE_MB = 5;
+      const ALLOWED_FILE_TYPES = ["image/jpeg", "image/png", "application/pdf"];
+      const idUploadsContainer = document.getElementById("idUploadsContainer");
+      const f_guestsInput = document.getElementById("f_guests");
+
+      function renderIdUploadRows() {
+        const n = Math.max(1, parseInt(f_guestsInput.value, 10) || 1);
+        idUploadsContainer.innerHTML = "";
+        for (let i = 1; i <= n; i++) {
+          const row = document.createElement("div");
+          row.className = "id-upload-row";
+          row.innerHTML = `
+            <label>Identitas Penghuni ${i}</label>
+            <input type="file" class="id-file-input" accept="image/jpeg,image/png,application/pdf" data-index="${i}" required />
+            <input type="text" class="id-note-input" placeholder="Catatan (opsional), mis. nama penghuni" data-index="${i}" />
+            <div class="file-hint">Format JPG/PNG/PDF, maks ${MAX_FILE_MB}MB.</div>
+          `;
+          idUploadsContainer.appendChild(row);
+        }
+      }
+      f_guestsInput.addEventListener("input", renderIdUploadRows);
+      renderIdUploadRows();
+
+      function validateIdUploads() {
+        const fileInputs = Array.from(document.querySelectorAll(".id-file-input"));
+        for (const input of fileInputs) {
+          const file = input.files[0];
+          if (!file) {
+            alert(`Mohon unggah dokumen identitas untuk Penghuni ${input.dataset.index}.`);
+            return null;
+          }
+          if (!ALLOWED_FILE_TYPES.includes(file.type)) {
+            alert(`Format file Penghuni ${input.dataset.index} tidak didukung. Gunakan JPG, PNG, atau PDF.`);
+            return null;
+          }
+          if (file.size > MAX_FILE_MB * 1024 * 1024) {
+            alert(`Ukuran file Penghuni ${input.dataset.index} melebihi ${MAX_FILE_MB}MB.`);
+            return null;
+          }
+        }
+        return fileInputs;
+      }
+
+      async function uploadIdDocuments(fileInputs, leadId) {
+        let successCount = 0;
+        for (const input of fileInputs) {
+          const file = input.files[0];
+          const note = document.querySelector(`.id-note-input[data-index="${input.dataset.index}"]`).value.trim() || null;
+          const ext = file.name.split(".").pop();
+          const path = `${leadId}/${crypto.randomUUID()}.${ext}`;
+          try {
+            const { error: uploadError } = await supabaseClient.storage
+              .from("id-documents")
+              .upload(path, file);
+            if (uploadError) throw uploadError;
+
+            const { error: docError } = await supabaseClient.from("lead_documents").insert({
+              lead_id: leadId,
+              file_path: path,
+              note,
+            });
+            if (docError) throw docError;
+            successCount++;
+          } catch (err) {
+            console.error(`Gagal unggah dokumen Penghuni ${input.dataset.index}:`, err);
+          }
+        }
+        return successCount;
+      }
+
       const vehicleRadios = document.querySelectorAll('input[name="vehicle"]');
       const carFollow = document.getElementById("carFollow");
       vehicleRadios.forEach((r) =>
@@ -1443,14 +1560,23 @@
             return;
           }
 
+          const fileInputs = validateIdUploads();
+          if (!fileInputs) return; // validasi gagal, pesan sudah ditampilkan
+
           const submitBtn = document.querySelector(".submit-btn");
           submitBtn.disabled = true;
           submitBtn.textContent = "Mengirim...";
+
+          // leadId dibuat di client supaya sudah tersedia SEBELUM upload file,
+          // tanpa perlu policy SELECT di tabel leads.
+          const leadId = crypto.randomUUID();
+          let docsUploaded = 0;
 
           // Simpan ke Supabase. Kalau gagal (mis. koneksi putus), tetap lanjutkan ke
           // WhatsApp supaya lead tidak hilang sepenuhnya — cuma tidak tercatat di database.
           try {
             const { error } = await supabaseClient.from("leads").insert({
+              id: leadId,
               name,
               phone,
               room_type: roomKey,
@@ -1462,13 +1588,21 @@
               vehicle_flex: flex,
               notes,
             });
-            if (error) console.error("Gagal simpan lead ke Supabase:", error);
+            if (error) throw error;
+
+            submitBtn.textContent = "Mengunggah dokumen...";
+            docsUploaded = await uploadIdDocuments(fileInputs, leadId);
           } catch (err) {
-            console.error("Gagal simpan lead ke Supabase:", err);
+            console.error("Gagal simpan data ke Supabase:", err);
           }
 
           submitBtn.disabled = false;
           submitBtn.textContent = "Kirim via WhatsApp";
+
+          const docsNote =
+            docsUploaded === fileInputs.length
+              ? `${docsUploaded} dokumen berhasil diunggah`
+              : `${docsUploaded}/${fileInputs.length} dokumen berhasil diunggah — mohon kirim ulang sisanya via chat`;
 
           const msg =
             `Halo Uniluxe, saya ingin daftar minat pre-booking:%0A` +
@@ -1480,6 +1614,7 @@
             `Estimasi Harga: ${priceText}%0A` +
             `Jumlah Penghuni: ${guests || "-"}%0A` +
             `Kendaraan: ${vehicle}${vehicle === "Mobil" ? " (fleksibel parkir luar: " + (flex || "-") + ")" : ""}%0A` +
+            `Dokumen Identitas: ${docsNote}%0A` +
             `Catatan: ${notes || "-"}`;
 
           document.getElementById("idModal").classList.add("show");
