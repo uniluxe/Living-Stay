@@ -466,6 +466,65 @@
         color: #1a1509;
         font-weight: 600;
       }
+      .cal-day.start,
+      .cal-day.end {
+        background: linear-gradient(120deg, var(--gold), var(--gold-soft));
+        color: #1a1509;
+        font-weight: 600;
+      }
+      .cal-day.inrange {
+        background: #2a2312;
+        border-radius: 0;
+      }
+      .cal-hint {
+        margin-top: 10px;
+        font-size: 0.74rem;
+        color: var(--muted);
+        text-align: center;
+      }
+      .months-box {
+        display: none;
+        align-items: center;
+        justify-content: space-between;
+        margin-top: 10px;
+        padding: 8px 12px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        font-size: 0.84rem;
+        color: var(--muted);
+      }
+      .months-box.show {
+        display: flex;
+      }
+      .months-box .ctrl {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        color: var(--cream);
+      }
+      .months-box button {
+        width: 30px;
+        height: 30px;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        background: none;
+        color: var(--gold-soft);
+        font-size: 1.1rem;
+        cursor: pointer;
+      }
+      .months-box button:disabled {
+        opacity: 0.3;
+        cursor: not-allowed;
+      }
+      .date-summary {
+        margin-top: 8px;
+        font-size: 0.8rem;
+        color: var(--muted);
+      }
+      .date-summary b {
+        color: var(--cream);
+        font-weight: 600;
+      }
       .cal-day:disabled {
         color: #4a4535;
         cursor: not-allowed;
@@ -636,14 +695,14 @@
                   <p class="duration-note" id="availNote"></p>
                 </div>
                 <div class="field">
-                  <label>Estimasi Tanggal Masuk</label>
+                  <label>Estimasi Tanggal Masuk &amp; Keluar</label>
                   <div class="date-picker-wrap" id="datePickerWrap">
                     <button
                       type="button"
                       class="date-input"
                       id="dateDisplayBtn"
                     >
-                      <span id="dateDisplayText">Pilih tanggal</span>
+                      <span id="dateDisplayText">Pilih tanggal masuk</span>
                       <svg
                         width="18"
                         height="18"
@@ -668,9 +727,32 @@
                         ><span>Sab</span>
                       </div>
                       <div class="cal-grid" id="calGrid"></div>
+                      <p class="cal-hint" id="calHint"></p>
                     </div>
                   </div>
+                  <div class="months-box" id="monthsBox">
+                    <span>Lama sewa</span>
+                    <div class="ctrl">
+                      <button
+                        type="button"
+                        id="mMinus"
+                        aria-label="Kurangi bulan"
+                      >
+                        −
+                      </button>
+                      <b id="mVal">1</b> bulan
+                      <button
+                        type="button"
+                        id="mPlus"
+                        aria-label="Tambah bulan"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+                  <p class="date-summary" id="dateSummary"></p>
                   <input type="hidden" id="f_date" />
+                  <input type="hidden" id="f_date_out" />
                 </div>
                 <div class="field">
                   <label>Catatan Tambahan (opsional)</label
@@ -902,7 +984,7 @@
 
         <a
           class="qlink"
-          href="https://www.google.com/maps/place/Uniluxe+Premium+Living+Stay/@-5.1563988,119.4348908,17z/data=!3m1!4b1!4m6!3m5!1s0x2dbee393a21ad727:0x6388025bf594dc6b!8m2!3d-5.1563988!4d119.4348908!16s%2Fg%2F11zyzjsmnf?entry=ttu&g_ep=EgoyMDI2MTEwMy4wIKXMDSoASAFQAw%3D%3D"
+          href="https://www.google.com/maps/search/?api=1&query=Jl.+Buakana+Kompleks+Pertamina+Blok+E+No+10+Pettarani+Makassar"
           target="_blank"
           ><span class="ic">📍</span><span class="txt">Buka Lokasi di Maps</span
           ><span class="arrow">›</span></a
@@ -1003,13 +1085,13 @@
 
       let priceMatrix = {
         harian: {
-          compact: 100000,
-          superior: 150000,
-          deluxe: 200000,
-          executive: 300000,
+          compact: 99999,
+          superior: 149999,
+          deluxe: 199999,
+          executive: 299999,
         },
         mingguan: {
-          compact: 450000,
+          compact: 525000,
           superior: 875000,
           deluxe: 1050000,
           executive: 1400000,
@@ -1099,8 +1181,17 @@
         const roomKey = document.getElementById("f_room").value;
         const priceEl = document.getElementById("priceNote");
         const price = (priceMatrix[durKey] || {})[roomKey];
+        const unitLabel = {
+          harian: "malam",
+          mingguan: "minggu",
+          bulanan: "bulan",
+        }[durKey];
+        const stay = getStayInfo();
         priceEl.textContent = price
-          ? `Estimasi harga: ${formatRupiah(price)} / ${durKey}`
+          ? `Estimasi harga: ${formatRupiah(price)} / ${unitLabel}` +
+            (stay
+              ? ` × ${stay.units} ${unitLabel} = ${formatRupiah(price * stay.units)}`
+              : "")
           : "";
       }
 
@@ -1130,11 +1221,80 @@
         "November",
         "Desember",
       ];
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      let calViewYear = today.getFullYear();
-      let calViewMonth = today.getMonth();
-      let calSelectedDate = null;
+      // ===================== Pemilih tanggal masuk & keluar =====================
+      // Aturan kerja (mengikuti praktik sistem booking):
+      //  - Semua perhitungan tanggal memakai string ISO + aritmetika UTC, jadi tidak
+      //    bergeser oleh zona waktu / DST perangkat.
+      //  - "Hari ini" diambil dari zona waktu operasional (WITA), bukan jam perangkat.
+      //  - Tanggal keluar diturunkan dari Durasi Sewa: Harian = pilih sendiri
+      //    (maks. MAX_NIGHTS malam), Mingguan = +7 hari, Bulanan = +N bulan kalender.
+      //  - Tanggal lampau dan di luar jendela HORIZON_DAYS tidak bisa dipilih.
+      const MAX_NIGHTS = 27; // lebih dari ini -> gunakan paket Bulanan
+      const HORIZON_DAYS = 90; // jendela maksimal tanggal masuk dari hari ini
+      const MAX_MONTHS = 12;
+      const MONTH_SHORT_ID = [
+        "Jan",
+        "Feb",
+        "Mar",
+        "Apr",
+        "Mei",
+        "Jun",
+        "Jul",
+        "Agu",
+        "Sep",
+        "Okt",
+        "Nov",
+        "Des",
+      ];
+
+      function parseISO(s) {
+        const p = s.split("-").map(Number);
+        return new Date(Date.UTC(p[0], p[1] - 1, p[2]));
+      }
+      function fmtISO(dt) {
+        return dt.toISOString().slice(0, 10);
+      }
+      function addDays(s, n) {
+        const dt = parseISO(s);
+        dt.setUTCDate(dt.getUTCDate() + n);
+        return fmtISO(dt);
+      }
+      function diffDays(a, b) {
+        return Math.round((parseISO(b) - parseISO(a)) / 86400000);
+      }
+      // Tambah bulan kalender; 31 Jan + 1 bulan = 28/29 Feb (tanggal dijepit).
+      function addMonthsISO(s, n) {
+        const dt = parseISO(s);
+        const day = dt.getUTCDate();
+        dt.setUTCDate(1);
+        dt.setUTCMonth(dt.getUTCMonth() + n);
+        const last = new Date(
+          Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth() + 1, 0),
+        ).getUTCDate();
+        dt.setUTCDate(Math.min(day, last));
+        return fmtISO(dt);
+      }
+      function fmtDateShort(s) {
+        const dt = parseISO(s);
+        return `${dt.getUTCDate()} ${MONTH_SHORT_ID[dt.getUTCMonth()]} ${dt.getUTCFullYear()}`;
+      }
+
+      const TODAY = new Date().toLocaleDateString("en-CA", {
+        timeZone: "Asia/Makassar",
+      });
+      const MAXDAY = addDays(TODAY, HORIZON_DAYS);
+
+      // `var` disengaja: updatePriceNote() bisa terpanggil sebelum blok ini jalan.
+      var DS = {
+        checkIn: null,
+        checkOut: null,
+        awaitEnd: false, // Harian: menunggu klik tanggal keluar
+        months: 1,
+        viewY: Number(TODAY.slice(0, 4)),
+        viewM: Number(TODAY.slice(5, 7)) - 1,
+      };
+      const TODAY_Y = DS.viewY;
+      const TODAY_M = DS.viewM;
 
       const dateDisplayBtn = document.getElementById("dateDisplayBtn");
       const calendarPopover = document.getElementById("calendarPopover");
@@ -1142,91 +1302,176 @@
       const calGrid = document.getElementById("calGrid");
       const calPrev = document.getElementById("calPrev");
       const calNext = document.getElementById("calNext");
+      const calHint = document.getElementById("calHint");
       const dateDisplayText = document.getElementById("dateDisplayText");
       const f_dateHidden = document.getElementById("f_date");
+      const f_dateOutHidden = document.getElementById("f_date_out");
+      const monthsBox = document.getElementById("monthsBox");
+      const dateSummary = document.getElementById("dateSummary");
 
-      function pad2(n) {
-        return n < 10 ? "0" + n : "" + n;
+      // Ringkasan masa sewa untuk perhitungan harga (null jika tanggal belum lengkap).
+      function getStayInfo() {
+        if (!DS || !DS.checkIn || !DS.checkOut) return null;
+        const mode = currentDuration();
+        const nights = diffDays(DS.checkIn, DS.checkOut);
+        const units =
+          mode === "harian" ? nights : mode === "mingguan" ? 1 : DS.months;
+        return { mode, nights, units };
       }
-      function isSameDay(a, b) {
-        return (
-          a &&
-          b &&
-          a.getFullYear() === b.getFullYear() &&
-          a.getMonth() === b.getMonth() &&
-          a.getDate() === b.getDate()
-        );
+
+      // Hitung ulang tanggal keluar sesuai Durasi Sewa.
+      function recomputeCheckOut() {
+        if (!DS.checkIn) return;
+        const mode = currentDuration();
+        if (mode === "mingguan") DS.checkOut = addDays(DS.checkIn, 7);
+        else if (mode === "bulanan")
+          DS.checkOut = addMonthsISO(DS.checkIn, DS.months);
+        else {
+          const ok =
+            DS.checkOut &&
+            DS.checkOut > DS.checkIn &&
+            diffDays(DS.checkIn, DS.checkOut) <= MAX_NIGHTS;
+          if (!ok) DS.checkOut = addDays(DS.checkIn, 1);
+        }
       }
 
       function renderCalendar() {
-        calMonthYear.textContent = `${MONTH_NAMES_ID[calViewMonth]} ${calViewYear}`;
-        const isCurrentMonth =
-          calViewYear === today.getFullYear() &&
-          calViewMonth === today.getMonth();
-        calPrev.disabled = isCurrentMonth;
+        const mode = currentDuration();
+        calMonthYear.textContent = `${MONTH_NAMES_ID[DS.viewM]} ${DS.viewY}`;
+        calPrev.disabled = DS.viewY === TODAY_Y && DS.viewM === TODAY_M;
+        const nextFirst = fmtISO(new Date(Date.UTC(DS.viewY, DS.viewM + 1, 1)));
+        calNext.disabled = nextFirst > addDays(MAXDAY, MAX_NIGHTS);
 
-        const firstDayOfWeek = new Date(calViewYear, calViewMonth, 1).getDay();
-        const daysInMonth = new Date(
-          calViewYear,
-          calViewMonth + 1,
-          0,
-        ).getDate();
+        const firstDow = new Date(Date.UTC(DS.viewY, DS.viewM, 1)).getUTCDay();
+        const dim = new Date(Date.UTC(DS.viewY, DS.viewM + 1, 0)).getUTCDate();
+        let html = "";
+        for (let i = 0; i < firstDow; i++)
+          html += '<span class="cal-day empty"></span>';
+        for (let d = 1; d <= dim; d++) {
+          const iso = fmtISO(new Date(Date.UTC(DS.viewY, DS.viewM, d)));
+          let dis = iso < TODAY;
+          if (DS.awaitEnd) {
+            if (iso > addDays(DS.checkIn, MAX_NIGHTS)) dis = true;
+          } else if (iso > MAXDAY) dis = true;
+          let cls = "cal-day";
+          if (iso === TODAY) cls += " today";
+          if (DS.checkIn && iso === DS.checkIn) cls += " start";
+          if (DS.checkIn && DS.checkOut) {
+            if (iso === DS.checkOut) cls += " end";
+            else if (iso > DS.checkIn && iso < DS.checkOut) cls += " inrange";
+          }
+          html += `<button type="button" class="${cls}" data-iso="${iso}"${dis ? " disabled" : ""}>${d}</button>`;
+        }
+        calGrid.innerHTML = html;
 
-        calGrid.innerHTML = "";
-        for (let i = 0; i < firstDayOfWeek; i++) {
-          const empty = document.createElement("span");
-          empty.className = "cal-day empty";
-          calGrid.appendChild(empty);
-        }
-        for (let d = 1; d <= daysInMonth; d++) {
-          const thisDate = new Date(calViewYear, calViewMonth, d);
-          const btn = document.createElement("button");
-          btn.type = "button";
-          btn.className = "cal-day";
-          btn.textContent = d;
-          if (thisDate < today) btn.disabled = true;
-          if (isSameDay(thisDate, today)) btn.classList.add("today");
-          if (isSameDay(thisDate, calSelectedDate))
-            btn.classList.add("selected");
-          btn.addEventListener("click", () => {
-            calSelectedDate = thisDate;
-            const iso = `${thisDate.getFullYear()}-${pad2(thisDate.getMonth() + 1)}-${pad2(thisDate.getDate())}`;
-            f_dateHidden.value = iso;
-            dateDisplayText.textContent = `${d} ${MONTH_NAMES_ID[calViewMonth]} ${calViewYear}`;
-            dateDisplayBtn.classList.add("has-value");
-            calendarPopover.classList.remove("show");
-            renderCalendar();
-          });
-          calGrid.appendChild(btn);
-        }
+        calHint.textContent = DS.awaitEnd
+          ? `Pilih tanggal keluar (maks. ${MAX_NIGHTS} malam), atau tutup kalender untuk 1 malam.`
+          : mode === "harian"
+            ? "Pilih tanggal masuk, lalu tanggal keluar."
+            : mode === "mingguan"
+              ? "Pilih tanggal masuk — keluar otomatis 7 hari kemudian."
+              : "Pilih tanggal masuk — keluar mengikuti lama sewa.";
       }
 
+      function updateDateUI() {
+        const mode = currentDuration();
+        f_dateHidden.value = DS.checkIn || "";
+        f_dateOutHidden.value = DS.checkOut || "";
+        const has = !!(DS.checkIn && DS.checkOut);
+        dateDisplayText.textContent = has
+          ? `${fmtDateShort(DS.checkIn)} → ${fmtDateShort(DS.checkOut)}`
+          : "Pilih tanggal masuk";
+        dateDisplayBtn.classList.toggle("has-value", has);
+        monthsBox.classList.toggle("show", mode === "bulanan");
+        document.getElementById("mVal").textContent = DS.months;
+        document.getElementById("mMinus").disabled = DS.months <= 1;
+        document.getElementById("mPlus").disabled = DS.months >= MAX_MONTHS;
+        const stay = getStayInfo();
+        dateSummary.innerHTML = stay
+          ? `Masuk <b>${fmtDateShort(DS.checkIn)}</b> · keluar <b>${fmtDateShort(DS.checkOut)}</b> · <b>${stay.nights} malam</b>`
+          : "";
+        renderCalendar();
+        updatePriceNote();
+      }
+
+      // Dipanggil saat Durasi Sewa berubah (sebelumnya fungsi ini belum terdefinisi).
+      function updateCheckinNote() {
+        DS.awaitEnd = false;
+        DS.checkOut = null; // tanggal keluar dari mode lama tidak dipakai lagi
+        recomputeCheckOut();
+        updateDateUI();
+      }
+
+      function pickDay(iso) {
+        const mode = currentDuration();
+        if (mode === "harian") {
+          if (DS.awaitEnd && iso > DS.checkIn) {
+            DS.checkOut = iso;
+            DS.awaitEnd = false;
+            calendarPopover.classList.remove("show");
+          } else {
+            DS.checkIn = iso;
+            DS.checkOut = addDays(iso, 1); // default 1 malam
+            DS.awaitEnd = true;
+          }
+        } else {
+          DS.checkIn = iso;
+          recomputeCheckOut();
+          calendarPopover.classList.remove("show");
+        }
+        updateDateUI();
+      }
+
+      calGrid.addEventListener("click", (e) => {
+        const b = e.target.closest(".cal-day");
+        if (b && !b.disabled && b.dataset.iso) pickDay(b.dataset.iso);
+      });
       dateDisplayBtn.addEventListener("click", (e) => {
         e.stopPropagation();
         calendarPopover.classList.toggle("show");
+        if (!calendarPopover.classList.contains("show")) DS.awaitEnd = false;
+        renderCalendar();
       });
+      // Klik di dalam popover jangan dianggap "klik di luar" (grid dirender ulang).
+      calendarPopover.addEventListener("click", (e) => e.stopPropagation());
       calPrev.addEventListener("click", () => {
-        calViewMonth--;
-        if (calViewMonth < 0) {
-          calViewMonth = 11;
-          calViewYear--;
+        DS.viewM--;
+        if (DS.viewM < 0) {
+          DS.viewM = 11;
+          DS.viewY--;
         }
         renderCalendar();
       });
       calNext.addEventListener("click", () => {
-        calViewMonth++;
-        if (calViewMonth > 11) {
-          calViewMonth = 0;
-          calViewYear++;
+        DS.viewM++;
+        if (DS.viewM > 11) {
+          DS.viewM = 0;
+          DS.viewY++;
         }
         renderCalendar();
       });
-      document.addEventListener("click", (e) => {
-        if (!document.getElementById("datePickerWrap").contains(e.target)) {
+      document.addEventListener("click", () => {
+        if (calendarPopover.classList.contains("show")) {
           calendarPopover.classList.remove("show");
+          DS.awaitEnd = false;
+          renderCalendar();
         }
       });
-      renderCalendar();
+      document.getElementById("mMinus").addEventListener("click", () => {
+        if (DS.months > 1) {
+          DS.months--;
+          recomputeCheckOut();
+          updateDateUI();
+        }
+      });
+      document.getElementById("mPlus").addEventListener("click", () => {
+        if (DS.months < MAX_MONTHS) {
+          DS.months++;
+          recomputeCheckOut();
+          updateDateUI();
+        }
+      });
+      updateDateUI();
 
       document
         .getElementById("bookingForm")
@@ -1238,6 +1483,8 @@
           const room = roomSelect.options[roomSelect.selectedIndex].text;
           const roomKey = roomSelect.value;
           const date = document.getElementById("f_date").value || null;
+          const dateOut = document.getElementById("f_date_out").value || null;
+          const stay = getStayInfo();
           const duration = document.querySelector(
             'input[name="duration"]:checked',
           ).value;
@@ -1251,6 +1498,16 @@
             alert("Mohon isi nama dan nomor WhatsApp.");
             return;
           }
+          if (!date || !dateOut || !stay) {
+            alert("Mohon pilih tanggal masuk.");
+            return;
+          }
+          const totalText = price ? formatRupiah(price * stay.units) : "-";
+          const unitLabel = {
+            harian: "malam",
+            mingguan: "minggu",
+            bulanan: "bulan",
+          }[durationKey];
 
           const submitBtn = document.querySelector(".submit-btn");
           submitBtn.disabled = true;
@@ -1263,7 +1520,7 @@
           // Simpan ke Supabase. Kalau gagal (mis. koneksi putus), tetap lanjutkan ke
           // WhatsApp supaya lead tidak hilang sepenuhnya — cuma tidak tercatat di database.
           try {
-            const { error } = await supabaseClient.from("leads").insert({
+            const baseRow = {
               id: crypto.randomUUID(),
               name,
               phone,
@@ -1272,7 +1529,24 @@
               price_estimate: price || null,
               checkin_date: date,
               notes,
-            });
+            };
+            let { error } = await supabaseClient
+              .from("leads")
+              .insert({
+                ...baseRow,
+                checkout_date: dateOut,
+                nights: stay.nights,
+              });
+            // Kolom baru belum dibuat di database? Simpan tanpa kolom itu agar lead tidak hilang.
+            if (
+              error &&
+              /checkout_date|nights|column|schema/i.test(error.message || "")
+            ) {
+              console.warn(
+                "Kolom checkout_date/nights belum ada, simpan versi lama.",
+              );
+              ({ error } = await supabaseClient.from("leads").insert(baseRow));
+            }
             if (error) throw error;
           } catch (err) {
             console.error("Gagal simpan data ke Supabase:", err);
@@ -1285,10 +1559,12 @@
             `Halo Uniluxe, saya ingin daftar minat pre-booking:%0A` +
             `Nama: ${name}%0A` +
             `No. WA: ${phone}%0A` +
-            `Durasi: ${duration}%0A` +
+            `Durasi: ${duration} (${stay.nights} malam)%0A` +
             `Tipe Kamar: ${room}%0A` +
-            `Estimasi Masuk: ${date || "-"}%0A` +
-            `Estimasi Harga: ${priceText}%0A` +
+            `Estimasi Masuk: ${fmtDateShort(date)}%0A` +
+            `Estimasi Keluar: ${fmtDateShort(dateOut)}%0A` +
+            `Estimasi Harga: ${priceText} / ${unitLabel}%0A` +
+            `Estimasi Total: ${totalText}%0A` +
             `Catatan: ${notes || "-"}`;
 
           const waUrl = "https://wa.me/628218880860?text=" + msg;
