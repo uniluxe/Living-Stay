@@ -388,10 +388,8 @@
         color: #6b6248;
       }
       .calendar-popover {
-        position: absolute;
-        top: calc(100% + 8px);
-        left: 0;
-        right: 0;
+        position: static;
+        margin-top: 8px;
         background: var(--panel);
         border: 1px solid var(--gold);
         border-radius: 14px;
@@ -1039,6 +1037,17 @@
           }
         });
       });
+
+      if ("ResizeObserver" in window) {
+        const panelObserver = new ResizeObserver(() => {
+          document.querySelectorAll(".accordion-panel.open").forEach((p) => {
+            p.style.maxHeight = p.scrollHeight + "px";
+          });
+        });
+        document
+          .querySelectorAll(".accordion-inner")
+          .forEach((el) => panelObserver.observe(el));
+      }
 
       function openLightbox(src, alt) {
         document.getElementById("lightboxImg").src = src;
