@@ -6,7 +6,7 @@
       name="viewport"
       content="width=device-width, initial-scale=1, viewport-fit=cover"
     />
-    <title>Uniluxe — Link in Bio</title>
+    <title>Uniluxe — Premium Living Stay</title>
     <link
       href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Jost:wght@400;500;600&display=swap"
       rel="stylesheet"
@@ -616,11 +616,7 @@
       />
       <h1 class="pname">Uniluxe</h1>
       <div class="phandle">PREMIUM LIVING STAY</div>
-      <p class="pbio">
-        Comfort · Privacy · Safety — hunian premium di Makassar, siap huni
-        minggu depan.
-      </p>
-      <p class="plocation">📍 Jl. Buakana, Kompleks Pertamina, Kota Makassar</p>
+      <p class="pbio">More Than a Place to Stay, <br />A Better Way to Live.</p>
 
       <div class="qlinks">
         <button
@@ -799,8 +795,8 @@
                   <div class="room-body">
                     <div class="room-top"><h3>Compact</h3></div>
                     <div class="price-tiers">
-                      <span><b>Harian</b> Rp 99.999</span
-                      ><span><b>Mingguan</b> Rp 525.000</span
+                      <span><b>Harian</b> Rp 100.000</span
+                      ><span><b>Mingguan</b> Rp 450.000</span
                       ><span><b>Bulanan</b> Rp 1.000.000</span>
                     </div>
                     <div class="room-tag">PRAKTIS</div>
@@ -819,7 +815,7 @@
                   <div class="room-body">
                     <div class="room-top"><h3>Superior</h3></div>
                     <div class="price-tiers">
-                      <span><b>Harian</b> Rp 149.999</span
+                      <span><b>Harian</b> Rp 150.000</span
                       ><span><b>Mingguan</b> Rp 875.000</span
                       ><span><b>Bulanan</b> Rp 2.000.000</span>
                     </div>
@@ -839,7 +835,7 @@
                   <div class="room-body">
                     <div class="room-top"><h3>Deluxe</h3></div>
                     <div class="price-tiers">
-                      <span><b>Harian</b> Rp 199.999</span
+                      <span><b>Harian</b> Rp 200.000</span
                       ><span><b>Mingguan</b> Rp 1.050.000</span
                       ><span><b>Bulanan</b> Rp 2.500.000</span>
                     </div>
@@ -859,7 +855,7 @@
                   <div class="room-body">
                     <div class="room-top"><h3>Executive</h3></div>
                     <div class="price-tiers">
-                      <span><b>Harian</b> Rp 299.999</span
+                      <span><b>Harian</b> Rp 300.000</span
                       ><span><b>Mingguan</b> Rp 1.400.000</span
                       ><span><b>Bulanan</b> Rp 3.500.000</span>
                     </div>
@@ -984,7 +980,7 @@
 
         <a
           class="qlink"
-          href="https://www.google.com/maps/search/?api=1&query=Jl.+Buakana+Kompleks+Pertamina+Blok+E+No+10+Pettarani+Makassar"
+          href="https://maps.app.goo.gl/pe1g5U9Q4mCfKTxP7"
           target="_blank"
           ><span class="ic">📍</span><span class="txt">Buka Lokasi di Maps</span
           ><span class="arrow">›</span></a
@@ -1530,13 +1526,11 @@
               checkin_date: date,
               notes,
             };
-            let { error } = await supabaseClient
-              .from("leads")
-              .insert({
-                ...baseRow,
-                checkout_date: dateOut,
-                nights: stay.nights,
-              });
+            let { error } = await supabaseClient.from("leads").insert({
+              ...baseRow,
+              checkout_date: dateOut,
+              nights: stay.nights,
+            });
             // Kolom baru belum dibuat di database? Simpan tanpa kolom itu agar lead tidak hilang.
             if (
               error &&
